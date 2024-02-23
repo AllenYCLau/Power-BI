@@ -1,0 +1,15 @@
+let
+    Source = SharePoint.Files("https://****.sharepoint.com/sites/offline_csv", [ApiVersion = 15]),
+    #"Filtered Hidden Files1" = Table.SelectRows(Source, each [Attributes]?[Hidden]? <> true),
+    #"Invoke Custom Function1" = Table.AddColumn(#"Filtered Hidden Files1", "Transform File", each #"Transform File"([Content])),
+    #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
+    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File"}),
+    #"(Starts here) Expanded Transform File" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File", {"ID", "Time", "Event", "Distance", "Monitor_id", "Location", "Event_img_hyperlink", "Sensor_position", "Image_path", "", "Unnamed: 0", "Image_hyperlink", "Id", "Web_url"}, {"Transform File.ID.1", "Transform File.Time", "Transform File.Event", "Transform File.Distance", "Transform File.Monitor_id", "Transform File.Location", "Transform File.Event_img_hyperlink", "Transform File.Sensor_position", "Transform File.Image_path", "Transform File.", "Transform File.Unnamed: 0", "Transform File.Image_hyperlink", "Transform File.Id", "Transform File.Web_url"}),
+    #"Extracted Source Name" = Table.TransformColumns(#"(Starts here) Expanded Transform File", {{"Source.Name", each Text.BeforeDelimiter(_, "."), type text}}),
+    #"Combine and Rename Title" = Table.AddColumn(#"Extracted Source Name", "Title", each if [Transform File.ID.1] <> null then [Transform File.ID.1] else [Transform File.Id]),
+    #"Combine and Rename Image_path" = Table.AddColumn(#"Combine and Rename Title", "Image_path", each if [Transform File.Event_img_hyperlink] <> null and [Transform File.Event_img_hyperlink] <> "none" then [Transform File.Event_img_hyperlink] else if [Transform File.Image_hyperlink] <> null and [Transform File.Image_hyperlink] <> "none" then [Transform File.Image_hyperlink] else [Transform File.Image_path]),
+    #"Renamed Columns" = Table.RenameColumns(#"Combine and Rename Image_path",{{"Transform File.Time", "Time"}, {"Transform File.Event", "Event"}, {"Transform File.Distance", "Distance"}, {"Transform File.Monitor_id", "Monitor_id"}, {"Transform File.Location", "Location"}, {"Transform File.Sensor_position", "Sensor_position"}}),
+    #"Removed Duplicates" = Table.RemoveColumns(#"Renamed Columns",{"Transform File.ID.1", "Transform File.Id", "Transform File.Event_img_hyperlink", "Transform File.Image_hyperlink", "Transform File.", "Transform File.Unnamed: 0", "Transform File.Image_path", "Transform File.Web_url"}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Removed Duplicates",{{"Source.Name", type text}, {"Title", type text}, {"Time", type datetime}, {"Event", type text}, {"Distance", type number}, {"Monitor_id", type text}, {"Location", type text}, {"Sensor_position", type text}})
+in
+    #"Changed Type"
