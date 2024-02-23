@@ -1,0 +1,28 @@
+let
+    Source = SharePoint.Tables("https://****.sharepoint.com/", [Implementation="2.0", ViewMode="Default"]),
+    #"********-****-****-****-**************" = Source{[Id="********-****-****-****-**************"]}[Items],
+    #"Replaced Errors" = Table.ReplaceErrorValues(#"********-****-****-****-**************", {{"Title", null}}),
+    #"Removed ""ID""" = Table.RemoveColumns(#"Replaced Errors",{"ID", "Event_img_hyperlink"}),
+    #"Appended Query" = Table.Combine({#"Removed ""ID""", non_live_list}),
+    #"Remove Duplicates on Title" = Table.Distinct(#"Appended Query", {"Title"}),
+    #"Capitalized Events and Direction" = Table.TransformColumns(#"Remove Duplicates on Title",{{"Event", Text.Proper, type text}, {"Sensor_position", Text.Proper, type text}}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Capitalized Events and Direction",{{"Time", type datetime}}),
+    #"Inserted Time Only" = Table.AddColumn(#"Changed Type", "Time Only", each Time.From(DateTimeZone.From([Time])), type time),
+    #"Inserted Start of Hour" = Table.AddColumn(#"Inserted Time Only", "Start of Hour", each Time.StartOfHour([Time Only]), type time),
+    #"Inserted Date Only" = Table.AddColumn(#"Inserted Start of Hour", "Date Only", each Date.From(DateTimeZone.From([Time])), type date),
+    #"Inserted Day of Week" = Table.AddColumn(#"Inserted Date Only", "Day of Week", each Date.DayOfWeek([Date Only]), Int64.Type),
+    #"Inserted Day of Week Text" = Table.AddColumn(#"Inserted Day of Week", "Day of Week Text", each Date.DayOfWeekName([Date Only]), Text.Type),
+    #"Merged Queries (Equipment Monitor)" = Table.NestedJoin(#"Inserted Day of Week Text", {"Monitor_id"}, dashboard_equipment_monitoring, {"Monitor ID"}, "dashboard_equipment_monitoring", JoinKind.LeftOuter),
+    #"Expand - Type and Camera Count" = Table.ExpandTableColumn(#"Merged Queries (Equipment Monitor)", "dashboard_equipment_monitoring", {"Total Cameras", "product Type"}, {"Total Cameras", "product Type"}),
+    #"Capitalized (product Type)" = Table.TransformColumns(#"Expand - Type and Camera Count",{{"product Type", Text.Proper, type text}}),
+    #"Added product Config" = Table.AddColumn(#"Capitalized (product Type)", "product Config", each if [product Type] = "Birdeye" then [product Type] else if ([product Type] = "Lidar" and [Total Cameras] = 2) then "Single Lidar" else if ([product Type] = "Lidar" and [Total Cameras] = 4) then "Dual Lidar" else if ([product Type] = "Stereo" and [Total Cameras] = 4) then "Dual Stereo" else if ([product Type] = "Stereo" and [Total Cameras] = 2) then "Single Stereo" else [product Type]),
+    #"Concat Monitor and Config" = Table.AddColumn(#"Added product Config", "Monitor ID & Config", each [Monitor_id] & " - " & [product Config]),
+    #"Merged Queries (Custom Set)" = Table.NestedJoin(#"Concat Monitor and Config", {"Monitor_id"}, #"Equipment and Sets (for Edit)", {"Equipment No"}, "Equipment and Sets (for Edit)", JoinKind.LeftOuter),
+    #"Expanded Equipment and Sets (for Edit)" = Table.ExpandTableColumn(#"Merged Queries (Custom Set)", "Equipment and Sets (for Edit)", {"Set"}, {"Equipment and Sets (for Edit).Set"}),
+    #"Default Set 1" = Table.ReplaceValue(#"Expanded Equipment and Sets (for Edit)", null, "Set 1", Replacer.ReplaceValue, {"Equipment and Sets (for Edit).Set"}), 
+    #"Insert Geo Coordinates" = Table.AddColumn(#"Default Set 1", "Text Between Delimiters", each Text.BetweenDelimiters([Location], "=", """", {0, RelativePosition.FromEnd}, 0), type text),
+    #"Split Latitudes and Longitudes" = Table.SplitColumn(#"Insert Geo Coordinates", "Text Between Delimiters", Splitter.SplitTextByDelimiter("+", QuoteStyle.Csv), {"Latitude", "Longitude"}),
+    #"Nullify Blank Coordinates" = Table.ReplaceValue(#"Split Latitudes and Longitudes","0.0","",Replacer.ReplaceValue,{"Latitude", "Longitude"}),
+    #"Change Coordinate Types" = Table.TransformColumnTypes(#"Nullify Blank Coordinates",{{"Latitude", type number}, {"Longitude", type number}})
+in
+    #"Change Coordinate Types"
